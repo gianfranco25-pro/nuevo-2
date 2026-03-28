@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mapa de Procesos — Sistema Zapatería</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f1117;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;height:100vh;color:#e2e8f0;user-select:none}
+
+/* ── TOP BAR ── */
+#bar{position:fixed;top:0;left:0;right:0;height:48px;background:#161b22;border-bottom:1px solid #21262d;display:flex;align-items:center;padding:0 16px;gap:12px;z-index:200}
+#bar h1{font-size:13px;font-weight:600;color:#e2e8f0;letter-spacing:-.2px;white-space:nowrap}
+.tag{font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;text-transform:uppercase;letter-spacing:.7px;white-space:nowrap}
+.t-blue{background:#1c3a5f;color:#58a6ff;border:1px solid #1f6feb}
+.t-gray{background:#21262d;color:#8b949e;border:1px solid #30363d}
+.sep{width:1px;height:24px;background:#21262d}
+#bar-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.hint{font-size:10.5px;color:#484f58;white-space:nowrap}
+
+/* ── CANVAS ── */
+#cv{position:fixed;top:48px;left:0;right:0;bottom:0;overflow:hidden;cursor:grab;background:#0f1117}
+#cv::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,#1e2530 1px,transparent 1px);background-size:30px 30px;pointer-events:none;opacity:.6}
+#cv.dragging{cursor:grabbing}
+#stage{position:absolute;top:0;left:0;transform-origin:0 0}
+
+/* ── CONTROLS ── */
+#ctl{position:fixed;bottom:20px;left:20px;display:flex;flex-direction:column;gap:5px;z-index:200}
+.cbtn{width:32px;height:32px;background:#161b22;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .1s}
+.cbtn:hover{background:#21262d;color:#e2e8f0}
+#zpc{height:32px;background:#161b22;border:1px solid #30363d;border-radius:7px;color:#58a6ff;font-size:11px;font-weight:700;padding:0 10px;display:flex;align-items:center;justify-content:center;min-width:50px}
+
+/* ── LEGEND ── */
+#leg{position:fixed;bottom:20px;right:20px;background:#161b22;border:1px solid #21262d;border-radius:10px;padding:14px 16px;z-index:200;min-width:205px}
+#leg h3{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#484f58;margin-bottom:10px}
+.li{display:flex;align-items:center;gap:9px;margin-bottom:6px;font-size:11px;color:#8b949e}
+.sh{width:16px;height:16px;border-radius:50%;flex-shrink:0}
+.sq{width:16px;height:10px;border-radius:3px;flex-shrink:0}
+.di{width:13px;height:13px;transform:rotate(45deg);flex-shrink:0}
+.ln{width:22px;height:0;flex-shrink:0}
+#leg hr{border:none;border-top:1px solid #21262d;margin:8px 0}
+#leg .pool-list{display:flex;flex-direction:column;gap:4px}
+.pl{display:flex;align-items:center;gap:8px;font-size:10px;color:#6e7681}
+.pc{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+
+/* ── MINIMAP ── */
+#mm{position:fixed;bottom:20px;left:68px;width:180px;height:105px;background:#161b22;border:1px solid #21262d;border-radius:8px;overflow:hidden;z-index:200}
+#mm canvas{width:100%;height:100%}
+#mm-vp{position:absolute;border:1.5px solid #58a6ff;border-radius:2px;pointer-events:none;opacity:.7}
+</style>
+</head>
+<body>
+<div id="bar">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+  <h1>Mapa de Procesos — Sistema de Ventas e Inventario · Zapatería</h1>
+  <div class="sep"></div>
+  <span class="tag t-blue">BPMN 2.0</span>
+  <span class="tag t-gray">8 Pools · 3 Roles · 40+ Actividades · 6 Flujos Inter-proceso</span>
+  <div id="bar-r">
+    <span class="hint">🖱 Rueda = zoom &nbsp;·&nbsp; Arrastrar = navegar &nbsp;·&nbsp; Doble clic = encuadrar todo</span>
+  </div>
+</div>
+
+<div id="cv">
+  <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<div id="ctl">
+  <button class="cbtn" id="zin" title="Acercar">+</button>
+  <button class="cbtn" id="zout" title="Alejar">−</button>
+  <button class="cbtn" id="zfit" title="Encuadrar todo">⊡</button>
+  <div id="zpc">25%</div>
+</div>
+
+<div id="mm"><canvas id="mmc"></canvas><div id="mm-vp"></div></div>
+
+<div id="leg">
+  <h3>Notación BPMN</h3>
+  <div class="li"><div class="sh" style="background:#1a4a2a;border:2.5px solid #2ea043"></div>Evento de inicio</div>
+  <div class="li"><div class="sh" style="background:#4a1010;border:3.5px solid #f85149"></div>Evento de fin</div>
+  <div class="li"><div class="sq" style="background:#1a2644;border:1.5px solid #388bfd"></div>Tarea / Actividad</div>
+  <div class="li"><div class="di" style="background:#2d2510;border:1.5px solid #d4a017"></div>Compuerta XOR / decisión</div>
+  <div class="li"><div class="sq" style="background:rgba(31,111,235,.1);border:1px dashed #1f6feb"></div>Nota del Sistema</div>
+  <div class="li"><div class="sq" style="background:none;border:1.5px dashed #484f58;border-radius:4px"></div>Subproceso agrupado</div>
+  <div class="li"><div class="ln" style="border-top:2px solid #484f58"></div>Flujo de secuencia</div>
+  <div class="li"><div class="ln" style="border-top:2px dashed #1f6feb"></div>Flujo inter-proceso</div>
+  <hr>
+  <div class="pool-list">
+    <div class="pl"><div class="pc" style="background:#1f6feb"></div>P1 Ubicaciones</div>
+    <div class="pl"><div class="pc" style="background:#8957e5"></div>P2 Catálogo</div>
+    <div class="pl"><div class="pc" style="background:#2ea043"></div>P3 Mercadería</div>
+    <div class="pl"><div class="pc" style="background:#d4a017"></div>P4 Muestras</div>
+    <div class="pl"><div class="pc" style="background:#da3633"></div>P5 Traslados</div>
+    <div class="pl"><div class="pc" style="background:#db61a2"></div>P6 Ventas</div>
+    <div class="pl"><div class="pc" style="background:#58a6ff"></div>P7 Liquidaciones</div>
+    <div class="pl"><div class="pc" style="background:#3fb950"></div>P8 Reportes</div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// SVG BUILDER UTILITIES
+// ─────────────────────────────────────────────────────────────────────────────
+const NS='http://www.w3.org/2000/svg';
+const svg=document.getElementById('stage');
+const TOTAL_W=7200, TOTAL_H=4500;
+svg.setAttribute('width',TOTAL_W);
+svg.setAttribute('height',TOTAL_H);
+
+function el(tag,attrs={},parent=null){
+  const e=document.createElementNS(NS,tag);
+  for(const[k,v]of Object.entries(attrs))e.setAttribute(k,v);
+  if(parent)parent.appendChild(e);
+  return e;
+}
+const ap=(p,e)=>{p.appendChild(e);return e};
+
+// Arrow markers
+const defs=el('defs',{},svg);
+const mkMark=(id,col)=>{
+  const m=el('marker',{id,viewBox:'0 0 10 10',refX:'9',refY:'5',markerWidth:'7',markerHeight:'7',orient:'auto-start-reverse'},defs);
+  el('path',{d:'M1 1L9 5L1 9',fill:'none',stroke:col,'stroke-width':1.6,'stroke-linecap':'round','stroke-linejoin':'round'},m);
+};
+mkMark('ah','#555d6b');
+mkMark('ah-blue','#1f6feb');
+mkMark('ah-green','#2ea043');
+mkMark('ah-amber','#d4a017');
+mkMark('ah-pink','#db61a2');
+mkMark('ah-red','#da3633');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DRAWING PRIMITIVES
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Pool (outer frame with colored left sidebar)
+function drawPool(x,y,w,h,title,color){
+  const g=el('g',{},svg);
+  // shadow-ish border
+  el('rect',{x,y,width:w,height:h,rx:8,fill:'#12161e',stroke:color,'stroke-width':2.5,'stroke-opacity':.9},g);
+  // left sidebar
+  el('rect',{x,y,width:44,height:h,rx:8,fill:color},g);
+  el('rect',{x:x+32,y,width:14,height:h,fill:color},g);
+  el('line',{x1:x+44,y1:y,x2:x+44,y2:y+h,stroke:color,'stroke-width':2},g);
+  // title (rotated)
+  const t=el('text',{x:x+22,y:y+h/2,fill:'#fff','font-family':'Segoe UI,system-ui,sans-serif','font-size':'13','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle',transform:`rotate(-90,${x+22},${y+h/2})`},g);
+  t.textContent=title;
+  return g;
+}
+
+// Lane inside pool
+function drawLane(x,y,w,h,title,lw=108){
+  const g=el('g',{},svg);
+  el('rect',{x,y,width:w,height:h,fill:'rgba(255,255,255,.012)',stroke:'#1e252f','stroke-width':1},g);
+  el('rect',{x,y,width:lw,height:h,fill:'rgba(255,255,255,.018)'},g);
+  el('line',{x1:x+lw,y1:y,x2:x+lw,y2:y+h,stroke:'#1e252f','stroke-width':1},g);
+  const t=el('text',{x:x+lw/2,y:y+h/2,fill:'#4a5568','font-family':'Segoe UI,system-ui,sans-serif','font-size':'9.5','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle',transform:`rotate(-90,${x+lw/2},${y+h/2})`},g);
+  t.textContent=title;
+  return g;
+}
+
+// Task (rounded rectangle with multi-line label)
+function drawTask(x,y,w,h,label,{fill='#1a2540',stroke='#388bfd',fsize=10.5,fcolor=null}={}){
+  const g=el('g',{},svg);
+  el('rect',{x,y,width:w,height:h,rx:7,fill,stroke,'stroke-width':1.5},g);
+  const fc=fcolor||stroke;
+  const lines=label.split('\n');
+  const lh=13;
+  const totalH=(lines.length-1)*lh;
+  lines.forEach((line,i)=>{
+    const t=el('text',{x:x+w/2,y:y+h/2-totalH/2+i*lh,fill:fc,'font-family':'Segoe UI,system-ui,sans-serif','font-size':fsize,'font-weight':'600','text-anchor':'middle','dominant-baseline':'middle'},g);
+    t.textContent=line;
+  });
+  return g;
+}
+
+// Gateway diamond
+function drawGW(cx,cy,size,label,{fill='#1e1a0a',stroke='#d4a017'}={}){
+  const g=el('g',{},svg);
+  const s=size;
+  el('path',{d:`M${cx},${cy-s} L${cx+s},${cy} L${cx},${cy+s} L${cx-s},${cy}Z`,fill,stroke,'stroke-width':2},g);
+  const lines=label.split('\n');
+  lines.forEach((l,i)=>{
+    const t=el('text',{x:cx,y:cy+s+13+i*12,fill:'#c99a1a','font-family':'Segoe UI,system-ui,sans-serif','font-size':'9.5','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle'},g);
+    t.textContent=l;
+  });
+  return g;
+}
+
+// Start event
+function drawStart(cx,cy,label=''){
+  const g=el('g',{},svg);
+  el('circle',{cx,cy,r:19,fill:'#0a1f10',stroke:'#2ea043','stroke-width':2.5},g);
+  el('circle',{cx,cy,r:9,fill:'#238636'},g);
+  if(label){
+    const lines=label.split('\n');
+    lines.forEach((l,i)=>{
+      const t=el('text',{x:cx,y:cy+28+i*13,fill:'#3fb950','font-family':'Segoe UI,system-ui,sans-serif','font-size':'9.5','font-weight':'500','text-anchor':'middle'},g);
+      t.textContent=l;
+    });
+  }
+  return g;
+}
+
+// End event
+function drawEnd(cx,cy,label=''){
+  const g=el('g',{},svg);
+  el('circle',{cx,cy,r:19,fill:'#1c0808',stroke:'#f85149','stroke-width':4},g);
+  el('circle',{cx,cy,r:8,fill:'#b91c1c'},g);
+  if(label){
+    const lines=label.split('\n');
+    lines.forEach((l,i)=>{
+      const t=el('text',{x:cx,y:cy+28+i*13,fill:'#f85149','font-family':'Segoe UI,system-ui,sans-serif','font-size':'9.5','font-weight':'500','text-anchor':'middle'},g);
+      t.textContent=l;
+    });
+  }
+  return g;
+}
+
+// System note (dashed rect)
+function drawNote(x,y,w,label,{color='#1f6feb'}={}){
+  const lines=label.split('\n');
+  const h=lines.length*14+16;
+  const g=el('g',{},svg);
+  el('rect',{x,y,width:w,height:h,rx:5,fill:`rgba(31,111,235,.07)`,stroke:color,'stroke-width':1.2,'stroke-dasharray':'5 3.5'},g);
+  lines.forEach((l,i)=>{
+    const t=el('text',{x:x+w/2,y:y+12+i*14,fill:color,'font-family':'Segoe UI,system-ui,sans-serif','font-size':'9.5','font-weight':'400','text-anchor':'middle','dominant-baseline':'middle'},g);
+    t.textContent=l;
+  });
+  return g;
+}
+
+// Subprocess bracket
+function drawBracket(x,y,w,h,title,color){
+  const g=el('g',{},svg);
+  el('rect',{x,y,width:w,height:h,rx:8,fill:'none',stroke:color,'stroke-width':1.5,'stroke-dasharray':'10 5'},g);
+  const tw=title.length*6.4+20;
+  el('rect',{x:x+12,y:y-9,width:tw,height:17,rx:3,fill:'#12161e'},g);
+  const t=el('text',{x:x+22,y:y,fill:color,'font-family':'Segoe UI,system-ui,sans-serif','font-size':'10','font-weight':'700','dominant-baseline':'middle'},g);
+  t.textContent=title;
+  return g;
+}
+
+// Arrow (polyline through points array [[x,y],...])
+function drawArr(pts,{color='#555d6b',dashed=false,label='',marker='ah'}={}){
+  const d='M'+pts.map(p=>p[0]+' '+p[1]).join(' L');
+  const p=el('path',{d,fill:'none',stroke:color,'stroke-width':1.6,'marker-end':`url(#${marker})`,...(dashed?{'stroke-dasharray':'8 4'}:{})},svg);
+  if(label){
+    const mid=pts[Math.floor(pts.length/2)];
+    const t=el('text',{x:mid[0]+5,y:mid[1]-5,fill:'#6e7681','font-family':'Segoe UI,system-ui,sans-serif','font-size':'9','font-weight':'500'},svg);
+    t.textContent=label;
+  }
+  return p;
+}
+
+// Label near gateway branch
+function branchLbl(x,y,s,color='#8b949e'){
+  const t=el('text',{x,y,fill:color,'font-family':'Segoe UI,system-ui,sans-serif','font-size':'9','font-weight':'600','text-anchor':'middle','dominant-baseline':'middle'},svg);
+  t.textContent=s;
+  return t;
+}
+
+// Pool index badge
+function poolBadge(x,y,text,color){
+  const g=el('g',{},svg);
+  el('rect',{x,y,width:52,height:20,rx:4,fill:'rgba(22,27,34,.9)',stroke:color,'stroke-width':1.5},g);
+  const t=el('text',{x:x+26,y:y+10,fill:color,'font-family':'Segoe UI,system-ui,sans-serif','font-size':'10.5','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle'},g);
+  t.textContent=text;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYOUT CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+const PW=7160; // pool width
+const POOL_X=0;
+const LW=44;   // pool left sidebar
+const LL=108;  // lane label width
+const CX=LW+LL; // content start x  = 152
+
+// Pool positions
+const pools=[
+  {id:'P1',label:'P1 — GESTIÓN DE UBICACIONES',    color:'#1f6feb',y:0,    h:570},
+  {id:'P2',label:'P2 — CATÁLOGO DE PRODUCTOS',     color:'#8957e5',y:595,  h:420},
+  {id:'P3',label:'P3 — INGRESO DE MERCADERÍA',     color:'#2ea043',y:1040, h:420},
+  {id:'P4',label:'P4 — GESTIÓN DE MUESTRAS',       color:'#d4a017',y:1485, h:510},
+  {id:'P5',label:'P5 — TRASLADOS DE INVENTARIO',   color:'#da3633',y:2020, h:560},
+  {id:'P6',label:'P6 — PROCESO DE VENTA FÍSICA',   color:'#db61a2',y:2605, h:690},
+  {id:'P7',label:'P7 — COMISIONES Y LIQUIDACIONES',color:'#58a6ff',y:3320, h:600},
+  {id:'P8',label:'P8 — REPORTES Y TRAZABILIDAD',   color:'#3fb950',y:3945, h:380},
+];
+
+// Draw all pool frames
+pools.forEach(p=>drawPool(POOL_X,p.y,PW,p.h,p.id,p.color));
+pools.forEach(p=>poolBadge(PW-66,p.y+8,p.id,p.color));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P1 — GESTIÓN DE UBICACIONES  (y:0, h:570)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const P=pools[0];
+  // 3 lanes: Admin (h:260), Sistema (h:310)
+  const ADH=270,SYH=P.h-ADH;
+  const ADy=P.y,SYy=P.y+ADH;
+  drawLane(LW,ADy,PW-LW,ADH,'ADMINISTRADOR');
+  drawLane(LW,SYy,PW-LW,SYH,'SISTEMA');
+
+  // ── Subproceso A: Crear ubicación ──────────────────────────────────
+  const A_y=P.y+110;
+  drawBracket(CX+10,P.y+6,2700,ADH-12,'Crear / Registrar Ubicación','#1f6feb');
+  drawStart(CX+55,A_y,'Inicio');
+  drawTask(CX+85,A_y-26,190,52,'Registrar nombre\ny descripción',{fill:'#111d33',stroke:'#388bfd'});
+  drawTask(CX+305,A_y-26,200,52,'Definir función:\nventa / almacén / exhibición',{fill:'#111d33',stroke:'#388bfd'});
+  drawGW(CX+570,A_y,28,'¿Incluye\nventa?');
+  drawTask(CX+655,A_y-68,200,52,'Asignar vendedores\nresponsables',{fill:'#111d33',stroke:'#388bfd'});
+  drawTask(CX+890,A_y-26,195,52,'Establecer estado:\nACTIVA',{fill:'#111d33',stroke:'#388bfd'});
+  drawTask(CX+1115,A_y-26,210,52,'Registrar en historial\nfunción + fecha inicio',{fill:'#111d33',stroke:'#388bfd'});
+  drawEnd(CX+1385,A_y,'Ubicación\ncreada');
+  // Arrows A
+  drawArr([[CX+73,A_y],[CX+85,A_y]]);
+  drawArr([[CX+275,A_y],[CX+305,A_y]]);
+  drawArr([[CX+505,A_y],[CX+542,A_y]]);
+  drawArr([[CX+570,A_y-28],[CX+570,A_y-55],[CX+655,A_y-55]],{label:'Sí'});
+  drawArr([[CX+855,A_y-55],[CX+938,A_y-55],[CX+938,A_y]]);
+  drawArr([[CX+598,A_y],[CX+890,A_y]],{label:'No'});
+  drawArr([[CX+1085,A_y],[CX+1115,A_y]]);
+  drawArr([[CX+1325,A_y],[CX+1366,A_y]]);
+
+  // ── Subproceso B: Modificar / Cambiar función ──────────────────────
+  const B_y=P.y+210;
+  drawBracket(CX+1500,P.y+6,2100,ADH-12,'Modificar / Cambiar Función de Ubicación','#388bfd');
+  drawStart(CX+1545,B_y,'Inicio');
+  drawTask(CX+1580,B_y-26,195,52,'Seleccionar\nubicación activa',{fill:'#111d33',stroke:'#388bfd'});
+  drawTask(CX+1805,B_y-26,205,52,'Editar tipo de función\no nombre',{fill:'#111d33',stroke:'#388bfd'});
+  drawTask(CX+2040,B_y-26,195,52,'Guardar cambio y\nregistrar en historial',{fill:'#111d33',stroke:'#388bfd'});
+  drawEnd(CX+2295,B_y,'Cambio\nguardado');
+  drawArr([[CX+1563,B_y],[CX+1580,B_y]]);
+  drawArr([[CX+1775,B_y],[CX+1805,B_y]]);
+  drawArr([[CX+2010,B_y],[CX+2040,B_y]]);
+  drawArr([[CX+2235,B_y],[CX+2276,B_y]]);
+
+  // ── Subproceso C: Desactivar ubicación ────────────────────────────
+  const C_y=P.y+120;
+  drawBracket(CX+3750,P.y+6,2150,ADH-12,'Desactivar / Dar de Baja Ubicación','#da3633');
+  drawStart(CX+3795,C_y,'Inicio');
+  drawTask(CX+3830,C_y-26,190,52,'Seleccionar\nubicación a desactivar',{fill:'#2a1010',stroke:'#f85149'});
+  drawGW(CX+4085,C_y,28,'¿Tiene\nstock activo?');
+  drawTask(CX+4170,C_y-76,210,52,'⚠ Bloquear:\nordenar traslado previo',{fill:'#251a00',stroke:'#d4a017'});
+  drawEnd(CX+4440,C_y-76,'Proceso\nbloqueado');
+  drawTask(CX+4170,C_y+16,195,52,'Verificar sin ventas\npendientes',{fill:'#2a1010',stroke:'#f85149'});
+  drawTask(CX+4395,C_y+16,195,52,'Marcar estado:\nINACTIVA',{fill:'#2a1010',stroke:'#f85149'});
+  drawEnd(CX+4648,C_y+42,'Ubicación\ndesactivada');
+  drawArr([[CX+3813,C_y],[CX+3830,C_y]]);
+  drawArr([[CX+4020,C_y],[CX+4057,C_y]]);
+  drawArr([[CX+4085,C_y-28],[CX+4085,C_y-50],[CX+4170,C_y-50]],{label:'Sí'});
+  drawArr([[CX+4380,C_y-50],[CX+4422,C_y-50]]);
+  drawArr([[CX+4113,C_y],[CX+4170,C_y+42]],{label:'No'});
+  drawArr([[CX+4365,C_y+42],[CX+4395,C_y+42]]);
+  drawArr([[CX+4590,C_y+42],[CX+4630,C_y+68]]);
+
+  // ── Sistema notes ──────────────────────────────────────────────────
+  drawNote(CX+40,SYy+20,310,'Valida unicidad del nombre\nRegistra fecha de alta\nAsigna ID único automático',{color:'#1f6feb'});
+  drawNote(CX+480,SYy+20,305,'Historial: cada cambio de función\nguarda fecha_inicio y fecha_fin\nNo permite borrar historial',{color:'#388bfd'});
+  drawNote(CX+1600,SYy+20,305,'Cambio de función mantiene\nconsistencia en reportes históricos\nNotifica a vendedores asignados',{color:'#388bfd'});
+  drawNote(CX+3850,SYy+20,305,'Bloqueo si hay stock activo\nBloqueo si hay ventas sin cerrar\nDesactivada NO puede operar',{color:'#f85149'});
+  drawNote(CX+4380,SYy+20,290,'Todas las transacciones históricas\nse conservan aunque esté inactiva\nReactivación disponible en cualquier momento',{color:'#1f6feb'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P2 — CATÁLOGO DE PRODUCTOS  (y:595, h:420)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const P=pools[1];
+  const ADH=270,SYH=P.h-ADH;
+  const ADy=P.y,SYy=P.y+ADH;
+  drawLane(LW,ADy,PW-LW,ADH,'ADMINISTRADOR');
+  drawLane(LW,SYy,PW-LW,SYH,'SISTEMA');
+
+  // ── Subproceso A: Crear producto ──────────────────────────────────
+  const A_y=P.y+100;
+  drawBracket(CX+10,P.y+6,2800,ADH-12,'Crear Nuevo Producto en Catálogo','#8957e5');
+  drawStart(CX+55,A_y,'Inicio');
+  drawTask(CX+85,A_y-26,190,52,'Ingresar modelo,\nmarca y línea',{fill:'#1a1230',stroke:'#8957e5'});
+  drawTask(CX+305,A_y-26,185,52,'Definir talla,\ncolor y material',{fill:'#1a1230',stroke:'#8957e5'});
+  drawTask(CX+520,A_y-26,185,52,'Establecer precio\nde venta',{fill:'#1a1230',stroke:'#8957e5'});
+  drawTask(CX+735,A_y-26,210,52,'Generar código de barras\n(modelo+talla+color)',{fill:'#1a1230',stroke:'#8957e5'});
+  drawTask(CX+975,A_y-26,195,52,'Activar producto\nen catálogo',{fill:'#1a1230',stroke:'#8957e5'});
+  drawEnd(CX+1228,A_y,'Producto\ncreado');
+  drawArr([[CX+73,A_y],[CX+85,A_y]]);
+  drawArr([[CX+275,A_y],[CX+305,A_y]]);
+  drawArr([[CX+490,A_y],[CX+520,A_y]]);
+  drawArr([[CX+705,A_y],[CX+735,A_y]]);
+  drawArr([[CX+945,A_y],[CX+975,A_y]]);
+  drawArr([[CX+1170,A_y],[CX+1209,A_y]]);
+
+  // ── Subproceso B: Editar producto ─────────────────────────────────
+  const B_y=P.y+210;
+  drawBracket(CX+1450,P.y+6,2200,ADH-12,'Editar / Actualizar Producto','#6e40c9');
+  drawStart(CX+1495,B_y,'Inicio');
+  drawTask(CX+1530,B_y-26,185,52,'Buscar producto\nactivo en catálogo',{fill:'#1a1230',stroke:'#8957e5'});
+  drawTask(CX+1745,B_y-26,200,52,'Editar datos:\nmodelo / precio / color',{fill:'#1a1230',stroke:'#8957e5'});
+  drawGW(CX+2010,B_y,28,'¿Cambio\nde precio?');
+  drawTask(CX+2095,B_y-65,210,52,'Versionar precio:\nguardar histórico + fecha',{fill:'#1a1230',stroke:'#8957e5'});
+  drawTask(CX+2335,B_y-26,195,52,'Guardar cambios\ny notificar',{fill:'#1a1230',stroke:'#8957e5'});
+  drawEnd(CX+2590,B_y,'Producto\nactualizado');
+  drawArr([[CX+1513,B_y],[CX+1530,B_y]]);
+  drawArr([[CX+1715,B_y],[CX+1745,B_y]]);
+  drawArr([[CX+1945,B_y],[CX+1982,B_y]]);
+  drawArr([[CX+2010,B_y-28],[CX+2010,B_y-52],[CX+2095,B_y-52]],{label:'Sí'});
+  drawArr([[CX+2305,B_y-52],[CX+2382,B_y-52],[CX+2382,B_y]]);
+  drawArr([[CX+2038,B_y],[CX+2335,B_y]],{label:'No'});
+  drawArr([[CX+2530,B_y],[CX+2571,B_y]]);
+
+  // ── Subproceso C: Desactivar ──────────────────────────────────────
+  const C_y=P.y+120;
+  drawBracket(CX+3800,P.y+6,1900,ADH-12,'Desactivar Producto','#6e40c9');
+  drawStart(CX+3845,C_y,'Inicio');
+  drawTask(CX+3880,C_y-26,190,52,'Seleccionar\nproducto',{fill:'#1a1230',stroke:'#8957e5'});
+  drawGW(CX+4135,C_y,28,'¿Tiene ventas\no stock?');
+  drawTask(CX+4220,C_y-68,200,52,'⚠ Advertir:\nproducto con historia',{fill:'#251a00',stroke:'#d4a017'});
+  drawTask(CX+4220,C_y+14,185,52,'Marcar como\nINACTIVO',{fill:'#1a1230',stroke:'#8957e5'});
+  drawEnd(CX+4465,C_y+40,'Desactivado');
+  drawArr([[CX+3863,C_y],[CX+3880,C_y]]);
+  drawArr([[CX+4070,C_y],[CX+4107,C_y]]);
+  drawArr([[CX+4135,C_y-28],[CX+4135,C_y-42],[CX+4220,C_y-42]],{label:'Sí'});
+  drawArr([[CX+4420,C_y-42],[CX+4220,C_y+40]]);
+  drawArr([[CX+4163,C_y],[CX+4220,C_y+40]],{label:'No'});
+  drawArr([[CX+4405,C_y+40],[CX+4447,C_y+40]]);
+
+  // Sistema notes
+  drawNote(CX+60,SYy+18,300,'Código de barras: único por\ncombinación modelo+talla+color\nSin duplicados posibles',{color:'#8957e5'});
+  drawNote(CX+560,SYy+18,290,'Precio versionado con timestamp\nHistorial de precios inmutable\nUsado en auditorías de ventas',{color:'#6e40c9'});
+  drawNote(CX+2050,SYy+18,290,'Producto inactivo no aparece\nen búsquedas de venta\nHistorial de ventas se mantiene',{color:'#8957e5'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P3 — INGRESO DE MERCADERÍA  (y:1040, h:420)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const P=pools[2];
+  const ADH=275,SYH=P.h-ADH;
+  const ADy=P.y,SYy=P.y+ADH;
+  drawLane(LW,ADy,PW-LW,ADH,'ADMINISTRADOR');
+  drawLane(LW,SYy,PW-LW,SYH,'SISTEMA');
+
+  const A_y=P.y+120;
+  drawBracket(CX+10,P.y+6,3500,ADH-12,'Ingreso de Mercadería al Sistema','#2ea043');
+  drawStart(CX+55,A_y,'Inicio');
+  drawTask(CX+85,A_y-26,195,52,'Registrar nuevo\nlote de mercadería',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawTask(CX+310,A_y-26,195,52,'Seleccionar producto\ndesde catálogo',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawTask(CX+535,A_y-26,200,52,'Seleccionar ubicación\ndestino (activa)',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawGW(CX+800,A_y,28,'¿Tipo de\nstock?');
+  // Branch: par vendible
+  drawTask(CX+885,A_y-72,200,52,'Ingresar cantidad:\npares completos',{fill:'#0a1f10',stroke:'#2ea043'});
+  // Branch: muestra
+  drawTask(CX+885,A_y+16,210,52,'Especificar pie:\nizquierdo / derecho',{fill:'#251a00',stroke:'#d4a017'});
+  // converge
+  drawTask(CX+1130,A_y-26,195,52,'Validar stock final\ny confirmar ingreso',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawTask(CX+1355,A_y-26,210,52,'Generar movimiento:\nresponsable + fecha',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawEnd(CX+1625,A_y,'Mercadería\ningresada');
+  drawArr([[CX+73,A_y],[CX+85,A_y]]);
+  drawArr([[CX+280,A_y],[CX+310,A_y]]);
+  drawArr([[CX+505,A_y],[CX+535,A_y]]);
+  drawArr([[CX+735,A_y],[CX+772,A_y]]);
+  drawArr([[CX+800,A_y-28],[CX+800,A_y-58],[CX+885,A_y-58]],{label:'Vendible'});
+  drawArr([[CX+800,A_y+28],[CX+800,A_y+42],[CX+885,A_y+42]],{label:'Muestra'});
+  drawArr([[CX+1085,A_y-58],[CX+1178,A_y-58],[CX+1178,A_y]]);
+  drawArr([[CX+1095,A_y+42],[CX+1178,A_y+42],[CX+1178,A_y]]);
+  drawArr([[CX+1325,A_y],[CX+1355,A_y]]);
+  drawArr([[CX+1565,A_y],[CX+1606,A_y]]);
+
+  // ── Subproceso B: Ajuste manual de stock ─────────────────────────
+  const B_y=P.y+195;
+  drawBracket(CX+2100,P.y+6,1950,ADH-12,'Ajuste Manual de Stock (solo Admin)','#1a6b2e');
+  drawStart(CX+2145,B_y,'Inicio');
+  drawTask(CX+2180,B_y-26,195,52,'Seleccionar producto\ny ubicación',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawTask(CX+2405,B_y-26,200,52,'Ingresar cantidad\nde ajuste (±)',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawTask(CX+2635,B_y-26,205,52,'Registrar motivo\ndel ajuste',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawTask(CX+2870,B_y-26,195,52,'Sistema aplica cambio\ny genera log',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawEnd(CX+3125,B_y,'Ajuste\naplicado');
+  drawArr([[CX+2163,B_y],[CX+2180,B_y]]);
+  drawArr([[CX+2375,B_y],[CX+2405,B_y]]);
+  drawArr([[CX+2605,B_y],[CX+2635,B_y]]);
+  drawArr([[CX+2840,B_y],[CX+2870,B_y]]);
+  drawArr([[CX+3065,B_y],[CX+3106,B_y]]);
+
+  // Sistema notes
+  drawNote(CX+60,SYy+18,310,'Valida que ubicación destino\nesté ACTIVA antes de ingresar\nBloquea si está inactiva',{color:'#2ea043'});
+  drawNote(CX+560,SYy+18,305,'Stock nunca puede quedar negativo\nSistema bloquea si cantidad > 0\nAcredita en ubicación específica',{color:'#2ea043'});
+  drawNote(CX+1400,SYy+18,310,'Movimiento incluye: tipo, responsable\nfecha, origen, destino, cantidad\nRegistro permanente e inmutable',{color:'#2ea043'});
+  drawNote(CX+2450,SYy+18,300,'Ajuste manual requiere motivo\nobligatorio — genera log de\naudit con usuario y timestamp',{color:'#1a6b2e'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P4 — GESTIÓN DE MUESTRAS  (y:1485, h:510)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const P=pools[3];
+  const ADH=310,SYH=P.h-ADH;
+  const ADy=P.y,SYy=P.y+ADH;
+  drawLane(LW,ADy,PW-LW,ADH,'ADMINISTRADOR');
+  drawLane(LW,SYy,PW-LW,SYH,'SISTEMA');
+
+  // ── Subproceso A: Registrar muestra ──────────────────────────────
+  const A_y=P.y+100;
+  drawBracket(CX+10,P.y+6,2600,ADH-12,'Registrar / Activar Muestra de Exhibición','#d4a017');
+  drawStart(CX+55,A_y,'Inicio');
+  drawGW(CX+140,A_y,28,'¿Origen de\nla muestra?');
+  // Branch: desde stock vendible
+  drawTask(CX+230,A_y-72,205,52,'Seleccionar par\nde stock vendible',{fill:'#201500',stroke:'#d4a017'});
+  drawTask(CX+465,A_y-72,200,52,'Convertir a estado:\nMUESTRA',{fill:'#201500',stroke:'#d4a017'});
+  // Branch: ingreso directo
+  drawTask(CX+230,A_y+16,205,52,'Ingresar unidad\ndirecta como muestra',{fill:'#201500',stroke:'#d4a017'});
+  // converge
+  drawTask(CX+710,A_y-26,195,52,'Definir pie:\nIZQ o DER',{fill:'#201500',stroke:'#d4a017'});
+  drawTask(CX+935,A_y-26,200,52,'Asignar a ubicación\nde exhibición',{fill:'#201500',stroke:'#d4a017'});
+  drawTask(CX+1165,A_y-26,195,52,'Activar muestra\nen sistema',{fill:'#201500',stroke:'#d4a017'});
+  drawEnd(CX+1418,A_y,'Muestra\nactiva');
+  drawArr([[CX+73,A_y],[CX+112,A_y]]);
+  drawArr([[CX+140,A_y-28],[CX+140,A_y-58],[CX+230,A_y-58]],{label:'Desde stock'});
+  drawArr([[CX+435,A_y-58],[CX+465,A_y-58]]);
+  drawArr([[CX+665,A_y-58],[CX+757,A_y-58],[CX+757,A_y]]);
+  drawArr([[CX+140,A_y+28],[CX+140,A_y+42],[CX+230,A_y+42]],{label:'Directo'});
+  drawArr([[CX+435,A_y+42],[CX+757,A_y+42],[CX+757,A_y]]);
+  drawArr([[CX+905,A_y],[CX+935,A_y]]);
+  drawArr([[CX+1135,A_y],[CX+1165,A_y]]);
+  drawArr([[CX+1360,A_y],[CX+1399,A_y]]);
+
+  // ── Subproceso B: Retirar muestra ────────────────────────────────
+  const B_y=P.y+235;
+  drawBracket(CX+1600,P.y+6,2050,ADH-12,'Retirar / Dar de Baja Muestra','#b07900');
+  drawStart(CX+1645,B_y,'Inicio');
+  drawTask(CX+1680,B_y-26,195,52,'Seleccionar\nmuestra a retirar',{fill:'#201500',stroke:'#d4a017'});
+  drawTask(CX+1905,B_y-26,195,52,'Registrar motivo\nde retiro',{fill:'#201500',stroke:'#d4a017'});
+  drawGW(CX+2165,B_y,28,'¿Convertir\na vendible?');
+  drawTask(CX+2250,B_y-68,205,52,'Registrar como par\nvendible + ubicación',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawTask(CX+2250,B_y+12,185,52,'Marcar como\nDESCARTADA',{fill:'#1c0808',stroke:'#f85149'});
+  drawEnd(CX+2505,B_y,'Muestra\ndada de baja');
+  drawArr([[CX+1663,B_y],[CX+1680,B_y]]);
+  drawArr([[CX+1875,B_y],[CX+1905,B_y]]);
+  drawArr([[CX+2100,B_y],[CX+2137,B_y]]);
+  drawArr([[CX+2165,B_y-28],[CX+2165,B_y-54],[CX+2250,B_y-54]],{label:'Sí'});
+  drawArr([[CX+2455,B_y-54],[CX+2551,B_y-54],[CX+2551,B_y]]);
+  drawArr([[CX+2193,B_y],[CX+2250,B_y+38]],{label:'No'});
+  drawArr([[CX+2435,B_y+38],[CX+2551,B_y+38],[CX+2551,B_y]]);
+  drawArr([[CX+2551,B_y],[CX+2486,B_y]]);
+
+  // Subproceso C: Verificar par completo
+  const C_y=P.y+120;
+  drawBracket(CX+3800,P.y+6,2100,ADH-12,'Verificar Disponibilidad de Par Completo','#c99a1a');
+  drawStart(CX+3845,C_y,'Inicio');
+  drawTask(CX+3880,C_y-26,195,52,'Consultar muestras\npor producto',{fill:'#201500',stroke:'#d4a017'});
+  drawGW(CX+4140,C_y,28,'¿Existe pie\ncomplementario?');
+  drawTask(CX+4225,C_y-68,215,52,'✅ Marcar disponibilidad\nde par para venta',{fill:'#0a1f10',stroke:'#2ea043'});
+  drawTask(CX+4225,C_y+14,215,52,'⚠ Alertar: falta pie\ncomplementario',{fill:'#251a00',stroke:'#d4a017'});
+  drawEnd(CX+4500,C_y+40,'Verificación\ncompleta');
+  drawArr([[CX+3863,C_y],[CX+3880,C_y]]);
+  drawArr([[CX+4075,C_y],[CX+4112,C_y]]);
+  drawArr([[CX+4140,C_y-28],[CX+4140,C_y-54],[CX+4225,C_y-54]],{label:'Sí'});
+  drawArr([[CX+4440,C_y-54],[CX+4547,C_y-54],[CX+4547,C_y]]);
+  drawArr([[CX+4168,C_y],[CX+4225,C_y+40]],{label:'No'});
+  drawArr([[CX+4440,C_y+40],[CX+4547,C_y+40],[CX+4547,C_y]]);
+  drawArr([[CX+4547,C_y],[CX+4481,C_y]]);
+
+  // Sistema notes
+  drawNote(CX+60,SYy+18,310,'Muestra NO suma al stock vendible\nConteos son paralelos e independientes\nMuestra: tipo izquierdo o derecho',{color:'#d4a017'});
+  drawNote(CX+750,SYy+18,305,'Alerta automática si se registra\nun pie sin par complementario\nEn cualquier ubicación del negocio',{color:'#d4a017'});
+  drawNote(CX+1900,SYy+18,305,'Conversión de muestra a vendible\nrequiere decisión explícita del Admin\nGenera movimiento de inventario',{color:'#d4a017'});
+  drawNote(CX+3950,SYy+18,310,'Sistema verifica en TODAS las\nubicaciones activas del negocio\nMuestra estado del par por ubicación',{color:'#d4a017'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P5 — TRASLADOS DE INVENTARIO  (y:2020, h:560)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const P=pools[4];
+  const ADH=140,VDH=140,SYH=P.h-ADH-VDH;
+  const ADy=P.y,VDy=P.y+ADH,SYy=P.y+ADH+VDH;
+  drawLane(LW,ADy,PW-LW,ADH,'ADMINISTRADOR');
+  drawLane(LW,VDy,PW-LW,VDH,'VENDEDOR');
+  drawLane(LW,SYy,PW-LW,SYH,'SISTEMA');
+
+  drawBracket(CX+10,P.y+6,3200,P.h-12,'TRASLADO PLANIFICADO (stock se mueve antes de la venta)','#da3633');
+  drawBracket(CX+3380,P.y+6,2700,P.h-12,'TRASLADO POR VENTA PUNTUAL (producto sale en el momento de la venta)','#d4a017');
+
+  // ── Traslado Planificado (Vendor → Admin flow) ────────────────────
+  const VY=VDy+70;   // vendor center
+  const AY=ADy+70;   // admin center
+
+  // Vendor side
+  drawStart(CX+55,VY,'Solicitar\ntraslado');
+  drawTask(CX+90,VY-26,200,52,'Indicar producto,\ncantidad y tipo',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawTask(CX+320,VY-26,200,52,'Indicar ubicación\norigen y destino',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawGW(CX+585,VY,28,'¿Incluye\nmuestras?');
+  drawTask(CX+670,VDy+12,205,52,'Especificar pie:\nIZQ o DER',{fill:'#201500',stroke:'#d4a017'});
+
+  // Admin side
+  drawTask(CX+880,AY-26,205,52,'Verificar stock\ndisponible en origen',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawGW(CX+1150,AY,28,'¿Stock\nsuficiente?');
+  drawTask(CX+1235,ADy+14,205,52,'Aprobar traslado\ny registrar',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawTask(CX+1235,ADy+80,195,50,'Rechazar y notificar\nmotivo al vendedor',{fill:'#251a00',stroke:'#d4a017'});
+  drawEnd(CX+1500,ADy+40,'Traslado\naprobado');
+  drawEnd(CX+1490,ADy+105,'Traslado\nrechazado');
+
+  drawArr([[CX+73,VY],[CX+90,VY]]);
+  drawArr([[CX+290,VY],[CX+320,VY]]);
+  drawArr([[CX+520,VY],[CX+557,VY]]);
+  drawArr([[CX+585,VDy+12],[CX+585,VDy+38],[CX+670,VDy+38]],{label:'Sí'});
+  drawArr([[CX+875,VDy+38],[CX+970,VDy+38],[CX+970,AY]]);
+  drawArr([[CX+613,VY],[CX+970,VY],[CX+970,AY]],{label:'No'});
+  drawArr([[CX+1085,AY],[CX+1122,AY]]);
+  drawArr([[CX+1150,ADy+28],[CX+1150,ADy+27],[CX+1235,ADy+27]],{label:'Sí'});
+  drawArr([[CX+1440,ADy+40],[CX+1481,ADy+40]]);
+  drawArr([[CX+1178,AY],[CX+1178,ADy+105],[CX+1235,ADy+105]],{label:'No'});
+  drawArr([[CX+1430,ADy+105],[CX+1471,ADy+105]]);
+
+  // System executes transfer
+  const SY=SYy+65;
+  drawTask(CX+1650,SY-26,200,52,'Descontar stock\nen ubicación origen',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawTask(CX+1880,SY-26,200,52,'Acreditar stock\nen ubicación destino',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawTask(CX+2110,SY-26,215,52,'Generar movimiento:\nresponsable, fecha, tipo',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawTask(CX+2355,SY-26,190,52,'Notificar al vendedor\nde destino',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawArr([[CX+1850,SY],[CX+1880,SY]]);
+  drawArr([[CX+2080,SY],[CX+2110,SY]]);
+  drawArr([[CX+2325,SY],[CX+2355,SY]]);
+  // Connect admin approval to system
+  drawArr([[CX+1500,ADy+40],[CX+1750,ADy+40],[CX+1750,SY]],{color:'#da3633',dashed:true,marker:'ah-red'});
+
+  // ── Traslado por Venta Puntual ─────────────────────────────────────
+  const PX=CX+3420;
+  const PVY=VDy+70;
+  const PAY=ADy+70;
+  const PSY=SYy+65;
+
+  drawStart(PX+40,PVY,'Venta puntual\nsin stock local');
+  drawTask(PX+80,PVY-26,215,52,'Producto no está\nen ubicación del vendedor',{fill:'#201500',stroke:'#d4a017'});
+  drawTask(PX+80,PAY-26,215,52,'Admin registra\nubicación real de origen',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawTask(PX+325,PVY-26,210,52,'Venta registrada en\nubicación de atención',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawTask(PX+325,PAY-26,215,52,'Comisión asignada\nal vendedor que atendió',{fill:'#1a1a38',stroke:'#58a6ff'});
+  drawTask(PX+325,PSY-26,205,52,'Sistema descuenta\nde ubicación ORIGEN',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawTask(PX+565,PSY-26,210,52,'Movimiento: origen real\n→ vendedor → cliente',{fill:'#2a0e0e',stroke:'#da3633'});
+  drawEnd(PX+820,PSY,'Venta puntual\nregistrada');
+  drawArr([[PX+58,PVY],[PX+80,PVY]]);
+  drawArr([[PX+295,PVY],[PX+325,PVY]]);
+  drawArr([[PX+80,PAY],[PX+100,PAY],[PX+100,PSY],[PX+325,PSY]],{color:'#da3633',dashed:true});
+  drawArr([[PX+325,PAY],[PX+350,PAY],[PX+350,PSY]]);
+  drawArr([[PX+535,PSY],[PX+565,PSY]]);
+  drawArr([[PX+775,PSY],[PX+801,PSY]]);
+
+  // Sistema notes
+  drawNote(CX+60,SYy+18,310,'Traslado planificado:\nstock se mueve ANTES de la venta\nVendedor destino puede vender al llegar',{color:'#da3633'});
+  drawNote(CX+900,SYy+18,305,'Traslado no puede dejar\nstock negativo en origen\nBloqueo automático del sistema',{color:'#da3633'});
+  drawNote(PX+60,SYy+18,310,'Venta puntual:\nstock NO pasa por ubicación vendedor\nDescuento directo del origen real',{color:'#d4a017'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P6 — PROCESO DE VENTA FÍSICA  (y:2605, h:690)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const P=pools[5];
+  const VDH=210,ADH=115,SYH=P.h-VDH-ADH;
+  const VDy=P.y,ADy=P.y+VDH,SYy=P.y+VDH+ADH;
+  drawLane(LW,VDy,PW-LW,VDH,'VENDEDOR');
+  drawLane(LW,ADy,PW-LW,ADH,'ADMINISTRADOR');
+  drawLane(LW,SYy,PW-LW,SYH,'SISTEMA');
+
+  const VY=VDy+105; // main flow center
+
+  // ── Main sale flow ─────────────────────────────────────────────────
+  drawStart(CX+55,VY,'Atender\ncliente');
+  drawGW(CX+145,VY,28,'¿Cómo busca\nel producto?');
+  // Scan
+  drawTask(CX+235,VY-76,200,52,'[⬡] ESCANEAR\ncódigo de barras',{fill:'#1a1230',stroke:'#8957e5'});
+  // Manual search
+  drawTask(CX+235,VY+20,195,52,'[Q] Búsqueda manual:\nnombre / talla / color',{fill:'#1a1230',stroke:'#8957e5'});
+  // System identifies product
+  drawTask(CX+470,VY-26,205,52,'Sistema muestra\nproducto + precio',{fill:'#0d1522',stroke:'#388bfd'});
+  drawGW(CX+742,VY,28,'¿Stock en ub.\nactual?');
+
+  // ── YES: stock in current location ────────────────────────────────
+  drawTask(CX+835,VDy+14,200,52,'Confirmar precio,\ncantidad y talla',{fill:'#100a22',stroke:'#db61a2'});
+  drawTask(CX+1065,VDy+14,200,52,'[✓] Registrar\nventa directa',{fill:'#100a22',stroke:'#db61a2'});
+
+  // ── NO: check other locations ─────────────────────────────────────
+  drawTask(CX+835,VY+22,210,52,'Sistema consulta stock\nen otras ubicaciones',{fill:'#0d1522',stroke:'#388bfd'});
+  drawGW(CX+1110,VY+48,27,'¿Hay stock\nen otra ub.?');
+
+  // Available in another location
+  drawGW(CX+1240,VY,27,'¿Tipo de\nventa?');
+  drawTask(CX+1325,VDy+14,200,52,'Venta Puntual:\ntrae producto ahora',{fill:'#100a22',stroke:'#db61a2'});
+  drawTask(CX+1325,VDy+84,200,52,'Traslado:\nmover y vender después',{fill:'#100a22',stroke:'#db61a2'});
+
+  // No stock anywhere
+  drawTask(CX+1240,VY+82,200,50,'⚠ Informar:\nSin stock disponible',{fill:'#251a00',stroke:'#d4a017'});
+  drawEnd(CX+1495,VY+108,'Sin stock\nglobal');
+
+  // Converge to final confirmation
+  drawTask(CX+1565,VY-26,200,52,'Confirmar y cerrar\nventa',{fill:'#100a22',stroke:'#db61a2'});
+  drawEnd(CX+1825,VY,'Venta\nregistrada');
+
+  drawArr([[CX+73,VY],[CX+117,VY]]);
+  drawArr([[CX+145,VY-28],[CX+145,VY-63],[CX+235,VY-63]],{label:'Escáner'});
+  drawArr([[CX+145,VY+28],[CX+145,VY+46],[CX+235,VY+46]],{label:'Manual'});
+  drawArr([[CX+435,VY-63],[CX+523,VY-63],[CX+523,VY]]);
+  drawArr([[CX+430,VY+46],[CX+523,VY+46],[CX+523,VY]]);
+  drawArr([[CX+675,VY],[CX+714,VY]]);
+  drawArr([[CX+742,VY-28],[CX+742,VY-52],[CX+835,VY-52]],{label:'Sí'});
+  drawArr([[CX+1035,VY-52],[CX+1112,VY-52]]);
+  drawArr([[CX+770,VY],[CX+835,VY+48]],{label:'No'});
+  drawArr([[CX+1045,VY+75],[CX+1083,VY+75]]);
+  drawArr([[CX+1110,VY+21],[CX+1110,VY+10],[CX+1240,VY+10]],{label:'Sí'});
+  drawArr([[CX+1240,VY-27],[CX+1240,VY-52],[CX+1325,VY-52]],{label:'Puntual'});
+  drawArr([[CX+1268,VY],[CX+1268,VY+110],[CX+1325,VY+110]],{label:'Traslado'});
+  drawArr([[CX+1525,VY-52],[CX+1613,VY-52],[CX+1613,VY]]);
+  drawArr([[CX+1525,VY+110],[CX+1613,VY+110],[CX+1613,VY]]);
+  drawArr([[CX+1112,VY-52],[CX+1613,VY-52]]);
+  drawArr([[CX+1765,VY],[CX+1806,VY]]);
+  drawArr([[CX+1137,VY+75],[CX+1240,VY+107]],{label:'No'});
+  drawArr([[CX+1440,VY+107],[CX+1476,VY+107]]);
+
+  // ── Anulación (Admin lane) ─────────────────────────────────────────
+  const AY=ADy+57;
+  drawStart(CX+55,AY,'Anular\nventa');
+  drawTask(CX+90,AY-26,200,52,'Seleccionar venta\na anular',{fill:'#2a0e0e',stroke:'#f85149'});
+  drawTask(CX+320,AY-26,195,52,'Registrar motivo\nde anulación',{fill:'#2a0e0e',stroke:'#f85149'});
+  drawGW(CX+580,AY,28,'¿Venta\ncerrada?');
+  drawTask(CX+665,AY-58,210,52,'Sistema revierte\nstock en ubicación',{fill:'#0d1522',stroke:'#388bfd'});
+  drawTask(CX+665,AY+6,200,52,'Revertir comisión\ndel vendedor',{fill:'#2a0e0e',stroke:'#f85149'});
+  drawEnd(CX+930,AY,'Venta\nanulada');
+  drawArr([[CX+73,AY],[CX+90,AY]]);
+  drawArr([[CX+290,AY],[CX+320,AY]]);
+  drawArr([[CX+515,AY],[CX+552,AY]]);
+  drawArr([[CX+580,AY-28],[CX+580,AY-44],[CX+665,AY-44]],{label:'Sí'});
+  drawArr([[CX+875,AY-44],[CX+977,AY-44],[CX+977,AY]]);
+  drawArr([[CX+608,AY],[CX+665,AY+32]],{label:'Bloq.'});
+  drawArr([[CX+865,AY+32],[CX+977,AY+32],[CX+977,AY]]);
+  drawArr([[CX+977,AY],[CX+911,AY]]);
+
+  // Sistema notes
+  drawNote(CX+60,SYy+18,310,'Bloqueo: sin stock en NINGUNA\nubicación → no puede registrar\nMuestra dónde hay disponible',{color:'#db61a2'});
+  drawNote(CX+560,SYy+18,295,'Comisión: guardada con valor\nvigente en ese momento\nNo afecta liquidaciones previas',{color:'#58a6ff'});
+  drawNote(CX+1100,SYy+18,305,'Venta cruzada: registra ub. atención\nY ub. de origen del producto\nAmbas quedan en el movimiento',{color:'#db61a2'});
+  drawNote(CX+1650,SYy+18,300,'Anulación: solo Admin puede anular\nRevierte inventario automáticamente\nLog permanente con motivo y fecha',{color:'#f85149'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P7 — COMISIONES Y LIQUIDACIONES  (y:3320, h:600)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const P=pools[6];
+  const ADH=240,VDH=155,SYH=P.h-ADH-VDH;
+  const ADy=P.y,VDy=P.y+ADH,SYy=P.y+ADH+VDH;
+  drawLane(LW,ADy,PW-LW,ADH,'ADMINISTRADOR');
+  drawLane(LW,VDy,PW-LW,VDH,'VENDEDOR');
+  drawLane(LW,SYy,PW-LW,SYH,'SISTEMA');
+
+  // ── Subproceso A: Definir comisión ────────────────────────────────
+  const A_y=P.y+85;
+  drawBracket(CX+10,P.y+6,1850,ADH-12,'Definir / Actualizar Comisión de Vendedor','#58a6ff');
+  drawStart(CX+55,A_y,'Inicio');
+  drawTask(CX+90,A_y-26,190,52,'Seleccionar\nvendedor activo',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+310,A_y-26,220,52,'Definir comisión:\nS/. por par vendido',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+560,A_y-26,210,52,'Guardar con fecha\nde inicio de vigencia',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+800,A_y-26,200,52,'Sistema versiona:\nvalor anterior → cerrado',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawEnd(CX+1060,A_y,'Comisión\ndefinida');
+  drawArr([[CX+73,A_y],[CX+90,A_y]]);
+  drawArr([[CX+280,A_y],[CX+310,A_y]]);
+  drawArr([[CX+530,A_y],[CX+560,A_y]]);
+  drawArr([[CX+770,A_y],[CX+800,A_y]]);
+  drawArr([[CX+1000,A_y],[CX+1041,A_y]]);
+
+  // ── Subproceso B: Generar liquidación ────────────────────────────
+  const B_y=P.y+185;
+  drawBracket(CX+10,ADy+ADH-268,2400,260,'Generar y Confirmar Liquidación Periódica','#3a7ac4');
+  drawStart(CX+55,B_y,'Inicio');
+  drawTask(CX+90,B_y-26,215,52,'Seleccionar vendedor\ny período',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+335,B_y-26,220,52,'Sistema calcula:\npares vendidos en período',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+585,B_y-26,215,52,'Calcular comisión\nbruta acumulada',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawGW(CX+865,B_y,28,'¿Aplicar\nDescuentos?');
+  drawTask(CX+955,P.y+122,225,52,'Ingresar descuento:\nmonto y motivo detallado',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+1210,P.y+122,230,52,'Guardar: monto, motivo,\nfecha, responsable',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+1475,B_y-26,210,52,'Calcular monto\nneto a pagar',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawGW(CX+1750,B_y,28,'¿Neto\nnegativo?');
+  drawTask(CX+1840,B_y-62,220,52,'⚠ Advertir: descuento\nexcede comisión bruta',{fill:'#251a00',stroke:'#d4a017'});
+  drawTask(CX+2090,B_y-26,210,52,'Confirmar y marcar\ncomo PENDIENTE',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawEnd(CX+2360,B_y,'Liquidación\npendiente');
+  drawArr([[CX+73,B_y],[CX+90,B_y]]);
+  drawArr([[CX+305,B_y],[CX+335,B_y]]);
+  drawArr([[CX+555,B_y],[CX+585,B_y]]);
+  drawArr([[CX+800,B_y],[CX+837,B_y]]);
+  drawArr([[CX+865,P.y+152],[CX+865,P.y+140],[CX+955,P.y+140]],{label:'Sí'});
+  drawArr([[CX+1185,P.y+148],[CX+1210,P.y+148]]);
+  drawArr([[CX+1440,P.y+148],[CX+1521,P.y+148],[CX+1521,B_y]]);
+  drawArr([[CX+893,B_y],[CX+1475,B_y]],{label:'No'});
+  drawArr([[CX+1685,B_y],[CX+1722,B_y]]);
+  drawArr([[CX+1750,B_y-28],[CX+1750,B_y-48],[CX+1840,B_y-48]],{label:'Sí'});
+  drawArr([[CX+2060,B_y-48],[CX+2145,B_y-48],[CX+2145,B_y]]);
+  drawArr([[CX+1778,B_y],[CX+2090,B_y]],{label:'No'});
+  drawArr([[CX+2300,B_y],[CX+2341,B_y]]);
+
+  // ── Subproceso C: Confirmar pago ─────────────────────────────────
+  const C_y=ADy+175;
+  drawTask(CX+2600,C_y-26,215,52,'Admin confirma\npago al vendedor',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+2845,C_y-26,215,52,'Marcar liquidación\ncomo PAGADA',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawEnd(CX+3120,C_y,'Liquidación\npagada ✓');
+  drawArr([[CX+2360,B_y],[CX+2650,B_y],[CX+2650,C_y]]);
+  drawArr([[CX+2815,C_y],[CX+2845,C_y]]);
+  drawArr([[CX+3060,C_y],[CX+3101,C_y]]);
+
+  // ── Vendor flow (view only) ────────────────────────────────────────
+  const V_y=VDy+77;
+  drawStart(CX+55,V_y,'Consultar\nmis datos');
+  drawTask(CX+90,V_y-26,220,52,'Ver comisiones\nacumuladas del período',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+340,V_y-26,210,52,'Ver detalle ventas\ny monto pendiente',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawTask(CX+580,V_y-26,205,52,'Ver historial de\nliquidaciones propias',{fill:'#0a1428',stroke:'#58a6ff'});
+  drawEnd(CX+845,V_y,'Info\nconsultada');
+  drawArr([[CX+73,V_y],[CX+90,V_y]]);
+  drawArr([[CX+310,V_y],[CX+340,V_y]]);
+  drawArr([[CX+550,V_y],[CX+580,V_y]]);
+  drawArr([[CX+785,V_y],[CX+826,V_y]]);
+
+  // Sistema notes
+  drawNote(CX+60,SYy+18,310,'Comisión versionada: historial completo\nValor vigente al momento de la venta\nLiquidaciones históricas no se recalculan',{color:'#58a6ff'});
+  drawNote(CX+700,SYy+18,305,'Descuento obligatorio: monto, motivo\nfecha, vendedor y responsable\nDescuento nunca puede dar neto <0',{color:'#58a6ff'});
+  drawNote(CX+1700,SYy+18,310,'Liquidación PAGADA es inmutable\nAjustes van al siguiente período\nLog completo de toda la liquidación',{color:'#3a7ac4'});
+  drawNote(CX+2700,SYy+18,300,'Estado de liquidación:\nPENDIENTE → PAGADA\nNo puede retroceder a pendiente',{color:'#58a6ff'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P8 — REPORTES Y TRAZABILIDAD  (y:3945, h:380)
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const P=pools[7];
+  const ADH=230,SYH=P.h-ADH;
+  const ADy=P.y,SYy=P.y+ADH;
+  drawLane(LW,ADy,PW-LW,ADH,'ADMINISTRADOR');
+  drawLane(LW,SYy,PW-LW,SYH,'SISTEMA');
+
+  const AY=P.y+115;
+  drawStart(CX+55,AY,'Generar\nreporte');
+  drawGW(CX+145,AY,30,'Tipo de\nreporte');
+
+  const branches=[
+    {y:P.y+50,  label:'Ventas por vendedor\ny período'},
+    {y:P.y+104, label:'Stock actual por\nubicación'},
+    {y:P.y+158, label:'Movimientos de\ninventario'},
+    {y:P.y+212, label:'Liquidaciones y\ncomisiones'},
+  ];
+  branches.forEach(b=>{
+    drawTask(CX+235,b.y,230,48,b.label,{fill:'#0a1a10',stroke:'#3fb950',fsize:10});
+    drawArr([[CX+145,AY],[CX+175,AY],[CX+175,b.y+24],[CX+235,b.y+24]]);
+    drawArr([[CX+465,b.y+24],[CX+560,AY]]);
+  });
+
+  drawTask(CX+560,AY-26,225,52,'Aplicar filtros:\nfecha / ub. / vendedor',{fill:'#0a1a10',stroke:'#3fb950'});
+  drawTask(CX+815,AY-26,220,52,'Generar vista previa\nde resultados',{fill:'#0a1a10',stroke:'#3fb950'});
+  drawGW(CX+1100,AY,28,'¿Exportar\narchivo?');
+  drawTask(CX+1185,AY-62,215,52,'Exportar a PDF\no Excel',{fill:'#0a1a10',stroke:'#3fb950'});
+  drawTask(CX+1430,AY-26,210,52,'Consulta de log\nde auditoría',{fill:'#0a1a10',stroke:'#3fb950'});
+  drawEnd(CX+1700,AY,'Reporte\ngenerado');
+  drawArr([[CX+73,AY],[CX+115,AY]]);
+  drawArr([[CX+785,AY],[CX+815,AY]]);
+  drawArr([[CX+1035,AY],[CX+1072,AY]]);
+  drawArr([[CX+1100,AY-28],[CX+1100,AY-48],[CX+1185,AY-48]],{label:'Sí'});
+  drawArr([[CX+1400,AY-48],[CX+1480,AY-48],[CX+1480,AY]]);
+  drawArr([[CX+1128,AY],[CX+1430,AY]],{label:'No'});
+  drawArr([[CX+1640,AY],[CX+1681,AY]]);
+
+  drawNote(CX+60,SYy+18,310,'Datos históricos completamente inmutables:\nmovimientos, ventas, liquidaciones, logs\nNo se puede modificar ningún registro pasado',{color:'#3fb950'});
+  drawNote(CX+700,SYy+18,305,'Log de auditoría: anulaciones\najustes manuales, cambios de stock\nAcciones sensibles con usuario + timestamp',{color:'#3fb950'});
+  drawNote(CX+1400,SYy+18,295,'Reportes cruzados: ventas × ubicación\nvendedor × período × producto\nExportar en cualquier combinación',{color:'#3fb950'});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CROSS-POOL CONNECTOR ARROWS (dashed, blue)
+// ─────────────────────────────────────────────────────────────────────────────
+const P2=pools[1],P3=pools[2],P4=pools[3],P5=pools[4],P6=pools[5],P7=pools[6],P8=pools[7];
+const xp=(px)=>CX+px;
+
+// P2 Catálogo → P3 Ingreso (producto debe existir en catálogo)
+const c23x=xp(760);
+el('line',{x1:c23x,y1:P2.y+P2.h,x2:c23x,y2:P3.y,stroke:'#1f6feb','stroke-width':2,'stroke-dasharray':'10 5','marker-end':'url(#ah-blue)'},svg);
+const t23=el('rect',{x:c23x-70,y:P2.y+P2.h+8,width:140,height:16,rx:3,fill:'#0f1117'},svg);
+el('text',{x:c23x,y:P2.y+P2.h+16,fill:'#1f6feb','font-size':'9','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle','font-family':'Segoe UI,sans-serif'},svg).textContent='Producto del catálogo';
+
+// P3 Ingreso → P4 Muestras (ingreso con tipo=muestra)
+const c34x=xp(1130);
+el('line',{x1:c34x,y1:P3.y+P3.h,x2:c34x,y2:P4.y,stroke:'#d4a017','stroke-width':2,'stroke-dasharray':'10 5','marker-end':'url(#ah-amber)'},svg);
+el('text',{x:c34x,y:P3.y+P3.h+16,fill:'#d4a017','font-size':'9','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle','font-family':'Segoe UI,sans-serif'},svg).textContent='Ingreso tipo muestra';
+
+// P5 Traslados ← P6 Ventas (venta puntual o traslado planificado)
+const c56x=xp(1350);
+el('line',{x1:c56x,y1:P6.y,x2:c56x,y2:P5.y+P5.h,stroke:'#da3633','stroke-width':2,'stroke-dasharray':'10 5','marker-end':'url(#ah-red)'},svg);
+el('text',{x:c56x,y:P5.y+P5.h+16,fill:'#da3633','font-size':'9','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle','font-family':'Segoe UI,sans-serif'},svg).textContent='Inicia traslado';
+
+// P6 Ventas → P7 Liquidaciones (cada venta genera comisión)
+const c67x=xp(1100);
+el('line',{x1:c67x,y1:P6.y+P6.h,x2:c67x,y2:P7.y,stroke:'#58a6ff','stroke-width':2,'stroke-dasharray':'10 5','marker-end':'url(#ah-blue)'},svg);
+el('text',{x:c67x,y:P6.y+P6.h+16,fill:'#58a6ff','font-size':'9','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle','font-family':'Segoe UI,sans-serif'},svg).textContent='Genera comisión';
+
+// P7 Liquidaciones → P8 Reportes (datos de liquidaciones)
+const c78x=xp(900);
+el('line',{x1:c78x,y1:P7.y+P7.h,x2:c78x,y2:P8.y,stroke:'#3fb950','stroke-width':2,'stroke-dasharray':'10 5','marker-end':'url(#ah-green)'},svg);
+el('text',{x:c78x,y:P7.y+P7.h+16,fill:'#3fb950','font-size':'9','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle','font-family':'Segoe UI,sans-serif'},svg).textContent='Datos liquidaciones';
+
+// P6 Ventas → P8 Reportes (ventas data)
+const c68x=xp(1800);
+el('line',{x1:c68x,y1:P6.y+P6.h,x2:c68x,y2:P8.y,stroke:'#3fb950','stroke-width':2,'stroke-dasharray':'10 5','marker-end':'url(#ah-green)'},svg);
+el('text',{x:c68x,y:P6.y+P6.h+16,fill:'#3fb950','font-size':'9','font-weight':'700','text-anchor':'middle','dominant-baseline':'middle','font-family':'Segoe UI,sans-serif'},svg).textContent='Datos de ventas';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ZOOM & PAN ENGINE
+// ─────────────────────────────────────────────────────────────────────────────
+let sc=0.22,tx=30,ty=20;
+let dragging=false,lastX=0,lastY=0;
+const canvas=document.getElementById('cv');
+const stage=document.getElementById('stage');
+const zpc=document.getElementById('zpc');
+
+function applyTransform(){
+  stage.style.transform=`translate(${tx}px,${ty}px) scale(${sc})`;
+  zpc.textContent=Math.round(sc*100)+'%';
+  updateMinimap();
+}
+
+// Wheel zoom
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const factor=e.deltaY<0?1.12:.89;
+  const ns=Math.min(Math.max(sc*factor,.06),5);
+  tx=mx-(mx-tx)*(ns/sc);
+  ty=my-(my-ty)*(ns/sc);
+  sc=ns;
+  applyTransform();
+},{passive:false});
+
+// Mouse drag
+canvas.addEventListener('mousedown',e=>{if(e.button===0){dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.classList.add('dragging')}});
+window.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  tx+=e.clientX-lastX; ty+=e.clientY-lastY;
+  lastX=e.clientX; lastY=e.clientY;
+  applyTransform();
+});
+window.addEventListener('mouseup',()=>{dragging=false;canvas.classList.remove('dragging')});
+
+// Double click to fit
+canvas.addEventListener('dblclick',()=>{
+  const vw=canvas.clientWidth, vh=canvas.clientHeight;
+  sc=Math.min(vw/TOTAL_W,vh/TOTAL_H)*0.9;
+  tx=(vw-TOTAL_W*sc)/2; ty=(vh-TOTAL_H*sc)/2;
+  applyTransform();
+});
+
+// Touch
+let lastDist=null;
+canvas.addEventListener('touchstart',e=>{if(e.touches.length===1){dragging=true;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;}},{passive:true});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(lastDist){const f=dist/lastDist;sc=Math.min(Math.max(sc*f,.06),5);applyTransform();}
+    lastDist=dist;
+  }else if(e.touches.length===1&&dragging){
+    tx+=e.touches[0].clientX-lastX; ty+=e.touches[0].clientY-lastY;
+    lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+    applyTransform();
+  }
+},{passive:false});
+canvas.addEventListener('touchend',()=>{dragging=false;lastDist=null;});
+
+// Buttons
+document.getElementById('zin').onclick=()=>{const cx=canvas.clientWidth/2,cy=canvas.clientHeight/2;const f=1.15;tx=cx-(cx-tx)*f;ty=cy-(cy-ty)*f;sc=Math.min(sc*f,5);applyTransform()};
+document.getElementById('zout').onclick=()=>{const cx=canvas.clientWidth/2,cy=canvas.clientHeight/2;const f=.87;tx=cx-(cx-tx)*f;ty=cy-(cy-ty)*f;sc=Math.max(sc*f,.06);applyTransform()};
+document.getElementById('zfit').onclick=()=>{
+  const vw=canvas.clientWidth,vh=canvas.clientHeight;
+  sc=Math.min(vw/TOTAL_W,vh/TOTAL_H)*0.9;
+  tx=(vw-TOTAL_W*sc)/2;ty=(vh-TOTAL_H*sc)/2;
+  applyTransform();
+};
+
+// ── Minimap ────────────────────────────────────────────────────────────────
+const mmc=document.getElementById('mmc');
+const mmvp=document.getElementById('mm-vp');
+const mmW=180,mmH=105;
+mmc.width=mmW;mmc.height=mmH;
+
+function updateMinimap(){
+  const ctx=mmc.getContext('2d');
+  ctx.clearRect(0,0,mmW,mmH);
+  const msc=mmW/TOTAL_W;
+  // draw pool rects
+  pools.forEach(p=>{
+    ctx.fillStyle=p.color+'33';
+    ctx.strokeStyle=p.color;
+    ctx.lineWidth=1;
+    ctx.fillRect(0,p.y*msc,mmW,p.h*msc);
+    ctx.strokeRect(0,p.y*msc,mmW,p.h*msc);
+    ctx.fillStyle=p.color;
+    ctx.fillRect(0,p.y*msc,3,p.h*msc);
+  });
+  // viewport box
+  const vw=canvas.clientWidth,vh=canvas.clientHeight;
+  const vpx=(-tx/sc)*msc, vpy=(-ty/sc)*msc;
+  const vpw=(vw/sc)*msc, vph=(vh/sc)*msc;
+  mmvp.style.left=Math.max(0,vpx)+'px';
+  mmvp.style.top=Math.max(0,vpy)+'px';
+  mmvp.style.width=Math.min(mmW,vpw)+'px';
+  mmvp.style.height=Math.min(mmH,vph)+'px';
+}
+
+// Minimap click to navigate
+document.getElementById('mm').addEventListener('click',e=>{
+  const r=e.currentTarget.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const msc=mmW/TOTAL_W;
+  const wx=mx/msc, wy=my/msc;
+  const vw=canvas.clientWidth, vh=canvas.clientHeight;
+  tx=-(wx*sc-vw/2); ty=-(wy*sc-vh/2);
+  applyTransform();
+});
+
+// Initial fit
+window.addEventListener('load',()=>{
+  const vw=canvas.clientWidth, vh=canvas.clientHeight;
+  sc=Math.min(vw/TOTAL_W,vh/TOTAL_H)*0.88;
+  tx=(vw-TOTAL_W*sc)/2; ty=10;
+  applyTransform();
+});
+</script>
+</body>
+</html>
